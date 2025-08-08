@@ -1,23 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { groq } from '@/lib/groq';
-import mammoth from 'mammoth';
-import pdfParse from 'pdf-parse';
-import { JSDOM } from 'jsdom';
-import { Readability } from '@mozilla/readability';
 
 export const runtime = 'nodejs';
 
-async function extractFromDocx(buf: Buffer) {
+// Lazy imports to avoid bundling/typing issues on Vercel
+async function getExtractors() {
+  const mammothMod = await import('mammoth');                    // CJS default
+  const pdfParseMod = await import('pdf-parse');                 // CJS default
+  const jsdomMod = await import('jsdom');                        // { JSDOM }
+  const readabilityMod = await import('@mozilla/readability');   // { Readability }
+
+  const mammoth = (mammothMod as any).default ?? mammothMod;
+  const pdfParse = (pdfParseMod as any).default ?? pdfParseMod;
+  const { JSDOM } = jsdomMod as any;
+  const { Readability } = readabilityMod as any;
+
+  return { mammoth, pdfParse, JSDOM, Readability };
+}
+
+async function extractFromDocx(buf: Buffer, mammoth: any) {
   const { value } = await mammoth.extractRawText({ buffer: buf });
   return value || '';
 }
 
-async function extractFromPdf(buf: Buffer) {
+async function extractFromPdf(buf: Buffer, pdfParse: any) {
   const data = await pdfParse(buf);
-  return data.text || '';
+  return (data && data.text) || '';
 }
 
-async function extractFromUrl(url: string) {
+async function extractFromUrl(url: string, JSDOM: any, Readability: any) {
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
   const html = await res.text();
@@ -25,7 +36,6 @@ async function extractFromUrl(url: string) {
   const reader = new Readability(dom.window.document);
   const article = reader.parse();
   if (article?.textContent) return article.textContent;
-  // fallback: strip tags
   return dom.window.document.body?.textContent || '';
 }
 
@@ -42,7 +52,6 @@ function chunk(text: string, maxChars = 6000) {
 async function summarizeText(text: string) {
   const model = 'llama-3.1-8b-instant';
   const chunks = chunk(text);
-  // Summarize chunks progressively
   let current = '';
   for (let idx = 0; idx < chunks.length; idx++) {
     const piece = chunks[idx];
@@ -73,6 +82,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing GROQ_API_KEY' }, { status: 500 });
     }
 
+    const { mammoth, pdfParse, JSDOM, Readability } = await getExtractors();
+
     const contentType = req.headers.get('content-type') || '';
     let text = '';
 
@@ -85,23 +96,23 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(await file.arrayBuffer());
         const mime = file.type || '';
         if (mime.includes('pdf')) {
-          text = await extractFromPdf(buf);
+          text = await extractFromPdf(buf, pdfParse);
         } else if (mime.includes('word') || mime.includes('docx')) {
-          text = await extractFromDocx(buf);
+          text = await extractFromDocx(buf, mammoth);
         } else if (mime.includes('text') || file.name.endsWith('.txt')) {
           text = buf.toString('utf8');
         } else {
           return NextResponse.json({ error: 'Unsupported file type. Use PDF, DOCX, or TXT.' }, { status: 400 });
         }
       } else if (url) {
-        text = await extractFromUrl(url);
+        text = await extractFromUrl(url, JSDOM, Readability);
       } else {
         return NextResponse.json({ error: 'Provide a file or a URL.' }, { status: 400 });
       }
     } else {
       const body = await req.json().catch(() => ({}));
       if (body?.url) {
-        text = await extractFromUrl(body.url);
+        text = await extractFromUrl(body.url, JSDOM, Readability);
       } else if (body?.text) {
         text = String(body.text);
       } else {
