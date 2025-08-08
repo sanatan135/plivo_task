@@ -15,7 +15,11 @@ export default function SkillSelector({ value, onChange }: Props) {
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="conversation">Conversation Analysis</option>
-        {/* Future skills can be added here (Image, Doc/URL) */}
+        <option value="conversation">Conversation Analysis</option>
+        <option value="image">Image Analysis</option>
+        <option value="doc">Document / URL Summarization</option>
+
+
       </select>
     </div>
   );

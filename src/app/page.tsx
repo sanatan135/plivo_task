@@ -5,11 +5,16 @@ import SkillSelector from '@/components/SkillSelector';
 import UploadCard from '@/components/UploadCard';
 import AudioPlayer from '@/components/AudioPlayer';
 import { extractFramesMFCC, diarizeTwoSpeakers, DiarizedSegment, DGWord } from '@/lib/diarize';
+import ImageDescribe from '@/components/ImageDescribe';
+import DocUrlSummarizer from '@/components/DocUrlSummarizer';
 
 type TranscribeResponse = { transcript: string; words: DGWord[] };
 
 export default function Page() {
-  const [skill, setSkill] = useState('conversation');
+  // Which skill is active
+  const [skill, setSkill] = useState<'conversation' | 'image' | 'doc'>('conversation');
+
+  // --- Conversation Analysis state ---
   const [audioUrl, setAudioUrl] = useState<string>();
   const [rawTranscript, setRawTranscript] = useState<string>('');
   const [words, setWords] = useState<DGWord[]>([]);
@@ -19,6 +24,13 @@ export default function Page() {
   const [error, setError] = useState<string>('');
 
   const canSummarize = useMemo(() => rawTranscript.trim().length > 0, [rawTranscript]);
+
+  // Header badge text per skill
+  const badge = {
+    conversation: 'Objective 1: Conversation Analysis',
+    image: 'Image Analysis',
+    doc: 'Document / URL Summarization'
+  }[skill];
 
   async function handleFile(file: File) {
     setError('');
@@ -74,11 +86,12 @@ export default function Page() {
     <main className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="h1">AI Playground</h1>
-        <span className="badge">Objective 1: Conversation Analysis</span>
+        <span className="badge">{badge}</span>
       </div>
 
-      <SkillSelector value={skill} onChange={setSkill} />
+      <SkillSelector value={skill} onChange={(v) => setSkill(v as typeof skill)} />
 
+      {/* === Conversation Analysis === */}
       {skill === 'conversation' && (
         <>
           <UploadCard onFile={handleFile} accept="audio/*" title="Upload audio (WAV/MP3/M4A)" />
@@ -98,7 +111,7 @@ export default function Page() {
               <div className="label mb-2">Diarization (max 2 speakers)</div>
               <div className="space-y-3 text-sm leading-6">
                 {busy === 'diarize' && <div>Analyzing speakers…</div>}
-                {(!busy || busy === 'idle') && diarized.length === 0 && <div>—</div>}
+                {busy === 'idle' && diarized.length === 0 && <div>—</div>}
                 {diarized.map((s, i) => (
                   <div key={i} className="p-3 rounded-xl bg-soft border border-edge">
                     <div className="text-xs text-gray-400 mb-1">
@@ -126,6 +139,16 @@ export default function Page() {
             </div>
           </div>
         </>
+      )}
+
+      {/* === Image Analysis === */}
+      {skill === 'image' && (
+        <ImageDescribe />
+      )}
+
+      {/* === Document / URL Summarization === */}
+      {skill === 'doc' && (
+        <DocUrlSummarizer />
       )}
     </main>
   );
